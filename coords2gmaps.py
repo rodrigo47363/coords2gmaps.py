@@ -1,146 +1,220 @@
-# 📍 coords2gmaps.py
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+coords2gmaps.py — Convierte coordenadas a enlaces de Google Maps.
+Soporta: grados decimales, DMS (° ' "), N/S/E/W, texto crudo, archivos CSV.
+Uso básico:
+  python coords2gmaps.py 25.40999984741211 -101.0199966430664
+  python coords2gmaps.py "25°24'36\"N" "101°01'12\"W"
+  echo "Latitude: 25.4099998474\nLongitude: -101.019996643" | python coords2gmaps.py --extract
+  python coords2gmaps.py --file apuntos.csv --sep "," --open
+"""
 
-![Python](https://img.shields.io/badge/python-3.8%2B-blue)
-![License](https://img.shields.io/badge/license-GPL--3.0-green)
-![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-lightgrey)
+import argparse, re, sys, webbrowser
+from typing import Optional, Tuple, Iterable, List
 
-```
- ██████╗ ██████╗  ██████╗ ██████╗ ██████╗ ███████╗██████╗  ██████╗ ███╗   ███╗ █████╗ ██████╗ ███████╗   ██████╗ ██╗   ██╗
-██╔════╝██╔═══██╗██╔═══██╗██╔══██╗██╔══██╗██╔════╝╚════██╗██╔════╝ ████╗ ████║██╔══██╗██╔══██╗██╔════╝   ██╔══██╗╚██╗ ██╔╝
-██║     ██║   ██║██║   ██║██████╔╝██║  ██║███████╗ █████╔╝██║  ███╗██╔████╔██║███████║██████╔╝███████╗   ██████╔╝ ╚████╔╝ 
-██║     ██║   ██║██║   ██║██╔══██╗██║  ██║╚════██║██╔═══╝ ██║   ██║██║╚██╔╝██║██╔══██║██╔═══╝ ╚════██║   ██╔═══╝   ╚██╔╝  
-╚██████╗╚██████╔╝╚██████╔╝██║  ██║██████╔╝███████║███████╗╚██████╔╝██║ ╚═╝ ██║██║  ██║██║     ███████║██╗██║        ██║   
- ╚═════╝ ╚═════╝  ╚═════╝ ╚═╝  ╚═╝╚═════╝ ╚══════╝╚══════╝ ╚═════╝ ╚═╝     ╚═╝╚═╝  ╚═╝╚═╝     ╚══════╝╚═╝╚═╝        ╚═╝   
-                                                                                                                          
-```
+# ---------------------------
+# Parsing de coordenadas
+# ---------------------------
 
-Una herramienta CLI para convertir coordenadas en múltiples formatos a enlaces directos de mapas. Ideal para profesionales de ciberseguridad, investigadores OSINT y analistas.
+DMS_PATTERN = re.compile(
+    r"""
+    ^\s*
+    (?P<deg>-?\d+(?:\.\d+)?)      # grados
+    (?:\D+(?P<min>\d+(?:\.\d+)?))? # minutos opcionales
+    (?:\D+(?P<sec>\d+(?:\.\d+)?))? # segundos opcionales
+    \s*(?P<hem>[NSEW])?            # hemisferio opcional
+    \s*$
+    """,
+    re.VERBOSE | re.IGNORECASE
+)
 
-## 🌟 Características Destacadas
+# Busca "Latitude: X" / "Longitude: Y" o pares sueltos "X, Y"
+LAT_LABELS = r"(lat|latitude|latitud)"
+LON_LABELS = r"(lon|long|longitud|longitude)"
 
-- 🎯 **Soporte multi-formato**: Decimal, DMS, y extracción automática desde texto
-- 📁 **Procesamiento por lotes**: Maneja archivos CSV, TXT y logs
-- 🗺️ **Multiplataforma**: Google Maps y OpenStreetMap
-- 🌐 **Integración directa**: Abre enlaces automáticamente en tu navegador
-- 💾 **Exportación flexible**: Guarda resultados en archivos de texto
+LabeledCoord = re.compile(
+    rf"(?P<label>{LAT_LABELS}|{LON_LABELS})\s*[:=]\s*(?P<val>[-+]?\d+(?:\.\d+)?)",
+    re.IGNORECASE
+)
 
-## 🚀 Instalación Rápida
+PairFloat = re.compile(
+    r"(?P<lat>[-+]?\d+(?:\.\d+)?)\s*[,;\s]\s*(?P<lon>[-+]?\d+(?:\.\d+)?)"
+)
 
-```bash
-# Clonar repositorio
-git clone https://github.com/rodrigo47363/coords2gmaps.git
-cd coords2gmaps
+def dms_to_decimal(deg: float, minutes: float = 0.0, seconds: float = 0.0, hemi: Optional[str] = None) -> float:
+    val = abs(deg) + (minutes or 0)/60.0 + (seconds or 0)/3600.0
+    if deg < 0:
+        val = -val
+    if hemi:
+        hemi = hemi.upper()
+        if hemi in ("S", "W"):
+            val = -abs(val)
+        elif hemi in ("N", "E"):
+            val = abs(val)
+    return val
 
-# Hacer ejecutable el script
-chmod +x coords2gmaps.py
+def parse_single_coord(token: str) -> Optional[float]:
+    """
+    Intenta parsear un único valor de coordenada (decimal o DMS).
+    """
+    s = token.strip().replace(",", ".")  # por si viene con coma decimal
+    # 1) Intento decimal puro
+    try:
+        return float(s)
+    except ValueError:
+        pass
+    # 2) Intento DMS (permite símbolos o espacios como separadores)
+    m = DMS_PATTERN.match(s.replace("°", " ").replace("'", " ").replace("’", " ").replace('"', " "))
+    if m:
+        deg = float(m.group("deg"))
+        minutes = float(m.group("min")) if m.group("min") else 0.0
+        seconds = float(m.group("sec")) if m.group("sec") else 0.0
+        hemi = m.group("hem")
+        return dms_to_decimal(deg, minutes, seconds, hemi)
+    return None
 
-# Instalar globalmente (opcional)
-sudo ln -s $(pwd)/coords2gmaps.py /usr/local/bin/coords2gmaps
-```
+def parse_coord_pair(a: str, b: str) -> Optional[Tuple[float, float]]:
+    lat = parse_single_coord(a)
+    lon = parse_single_coord(b)
+    if lat is None or lon is None:
+        return None
+    # Saneamiento rápido de rangos
+    if not (-90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0):
+        return None
+    return (lat, lon)
 
-## 💡 Uso Avanzado
+def extract_from_text(text: str) -> List[Tuple[float, float]]:
+    """
+    Extrae coordenadas de texto libre.
+    Prioriza claves Lat/Long; si no, intenta pares flotantes.
+    """
+    results = []
 
-### Conversión Básica
-```bash
-# Coordenadas decimales
-coords2gmaps.py 25.4099998474 -101.019996643
+    # 1) Buscar etiquetas específicas
+    labeled = list(LabeledCoord.finditer(text))
+    if labeled:
+        lat_val = None
+        lon_val = None
+        for m in labeled:
+            label = m.group("label").lower()
+            val = float(m.group("val"))
+            if re.fullmatch(LAT_LABELS, label, re.IGNORECASE):
+                lat_val = val
+            elif re.fullmatch(LON_LABELS, label, re.IGNORECASE):
+                lon_val = val
+        if lat_val is not None and lon_val is not None:
+            results.append((lat_val, lon_val))
 
-# Formato DMS
-coords2gmaps.py "25°24'36.0\"N" "101°1'12.0\"W"
-```
+    # 2) Buscar pares decimales sueltos lat,lon
+    for m in PairFloat.finditer(text):
+        lat = float(m.group("lat"))
+        lon = float(m.group("lon"))
+        if -90 <= lat <= 90 and -180 <= lon <= 180:
+            pair = (lat, lon)
+            if pair not in results:
+                results.append(pair)
 
-### Extracción desde Texto
-```bash
-# Desde archivo
-coords2gmaps.py --extract < informe.txt
+    return results
 
-# Desde output de otros comandos
-nmap -sP 192.168.1.0/24 | coords2gmaps.py --extract
-```
+# ---------------------------
+# Generadores de enlaces
+# ---------------------------
 
-### Procesamiento por Lotes
-```bash
-# Archivo CSV con separador personalizado
-coords2gmaps.py --file coordenadas.csv --sep ";"
+def gmaps_url(lat: float, lon: float) -> str:
+    return f"https://www.google.com/maps/search/?api=1&query={lat},{lon}"
 
-# Exportar resultados
-coords2gmaps.py --file datos.txt --output resultados.txt
-```
+def osm_url(lat: float, lon: float) -> str:
+    return f"https://www.openstreetmap.org/?mlat={lat}&mlon={lon}#map=16/{lat}/{lon}"
 
-### Integración con Navegador
-```bash
-# Abrir automáticamente en navegador
-coords2gmaps.py 25.41 -101.02 --open
+# ---------------------------
+# I/O y CLI
+# ---------------------------
 
-# Generar enlaces para ambos servicios
-coords2gmaps.py 25.41 -101.02 --osm --open
-```
+def read_pairs_from_file(path: str, sep: str = ",") -> Iterable[Tuple[float, float]]:
+    with open(path, "r", encoding="utf-8", errors="ignore") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            # Intento por separador
+            if sep in line:
+                parts = [p.strip() for p in line.split(sep)]
+            else:
+                # fallback: espacios
+                parts = line.split()
+            if len(parts) < 2:
+                # prueba extracción libre por si es texto
+                for p in extract_from_text(line):
+                    yield p
+                continue
+            pair = parse_coord_pair(parts[0], parts[1])
+            if pair:
+                yield pair
 
-## 🛠️ Opciones Completas
+def main():
+    ap = argparse.ArgumentParser(description="Convierte coordenadas a enlaces de Google Maps/OpenStreetMap.")
+    ap.add_argument("lat", nargs="?", help="Latitud (decimal o DMS). Opcional si usas --file o --extract.")
+    ap.add_argument("lon", nargs="?", help="Longitud (decimal o DMS).")
+    ap.add_argument("--file", "-f", help="Archivo con lat,lon por línea (o texto crudo).")
+    ap.add_argument("--sep", default=",", help="Separador de columnas (por defecto ',').")
+    ap.add_argument("--extract", action="store_true", help="Extraer coordenadas desde texto crudo (stdin o --file).")
+    ap.add_argument("--open", action="store_true", help="Abrir enlaces en el navegador.")
+    ap.add_argument("--osm", action="store_true", help="Además del enlace de Google Maps, genera enlace OSM.")
+    ap.add_argument("--output", "-o", help="Guardar enlaces en un archivo.")
+    args = ap.parse_args()
 
-| Opción | Descripción | Ejemplo |
-|--------|-------------|---------|
-| `POSITIONAL` | Coordenadas directas | `25.41 -101.02` |
-| `-f, --file` | Archivo de entrada | `--file datos.csv` |
-| `-s, --sep` | Separador personalizado | `--sep ";"` |
-| `-e, --extract` | Modo extracción | `--extract` |
-| `-o, --open` | Abrir en navegador | `--open` |
-| `--osm` | Incluir OpenStreetMap | `--osm` |
-| `--output` | Archivo de salida | `--output urls.txt` |
-| `-v, --verbose` | Modo verbose | `-v` |
+    pairs: List[Tuple[float, float]] = []
 
-## 📊 Ejemplos Prácticos
+    # Entrada por argumentos directos
+    if args.lat and args.lon:
+        pair = parse_coord_pair(args.lat, args.lon)
+        if not pair:
+            sys.exit("[-] Error: no pude interpretar lat/lon proporcionadas.")
+        pairs.append(pair)
 
-### Caso 1: Análisis Forense
-```bash
-# Extraer coordenadas de logs y generar mapa
-cat access.log | grep "location" | coords2gmaps.py --extract --output suspicious_locations.txt
-```
+    # Entrada por archivo
+    if args.file:
+        content = None
+        try:
+            if args.extract:
+                with open(args.file, "r", encoding="utf-8", errors="ignore") as f:
+                    content = f.read()
+                pairs.extend(extract_from_text(content))
+            else:
+                pairs.extend(list(read_pairs_from_file(args.file, sep=args.sep)))
+        except FileNotFoundError:
+            sys.exit(f"[-] Archivo no encontrado: {args.file}")
 
-### Caso 2: Investigación OSINT
-```bash
-# Procesar lista de coordenadas y abrir en navegador
-coords2gmaps.py --file coordinates_list.txt --open --osm
-```
+    # Entrada por STDIN (piping), útil con --extract
+    if not pairs and args.extract and not sys.stdin.isatty():
+        text = sys.stdin.read()
+        pairs.extend(extract_from_text(text))
 
-### Caso 3: Automatización con Scripts
-```bash
-#!/bin/bash
-# Script para monitoreo continuo
-tail -f gps_data.stream | while read line; do
-    echo "$line" | coords2gmaps.py --extract --open
-done
-```
+    if not pairs:
+        ap.print_help(sys.stderr)
+        sys.exit("\n[-] No se encontraron coordenadas para procesar.")
 
-## 🗺️ Roadmap
+    out_lines = []
+    for (lat, lon) in pairs:
+        gm = gmaps_url(lat, lon)
+        line = gm
+        if args.osm:
+            line += "    |    " + osm_url(lat, lon)
+        out_lines.append(line)
+        print(line)
+        if args.open:
+            try:
+                webbrowser.open(gm)
+            except Exception as e:
+                print(f"[!] No se pudo abrir el navegador: {e}", file=sys.stderr)
 
-- [ ] **Exportación GeoJSON** - Para integración con herramientas SIG
-- [ ] **Soporte GPX/NMEA** - Importación desde dispositivos GPS
-- [ ] **API REST** - Versión servidor para integraciones
-- [ ] **Interfaz Web** - Versión navegador con mapa interactivo
-- [ ] **Plugin Wireshark** - Extracción directa desde paquetes
+    if args.output:
+        try:
+            with open(args.output, "w", encoding="utf-8") as f:
+                f.write("\n".join(out_lines) + "\n")
+        except Exception as e:
+            sys.exit(f"[-] No pude escribir en {args.output}: {e}")
 
-## 🤝 Contribuir
-
-¡Las contribuciones son bienvenidas! Por favor:
-
-1. Haz Fork del proyecto
-2. Crea una rama para tu feature (`git checkout -b feature/AmazingFeature`)
-3. Commit tus cambios (`git commit -m 'Add AmazingFeature'`)
-4. Push a la rama (`git push origin feature/AmazingFeature`)
-5. Abre un Pull Request
-
-## 👨‍💻 Author
-
-**Rodrigo** - [GitHub](https://github.com/rodrigo47363) | [LinkedIn](https://www.linkedin.com/in/rodrigo-v-695728215/) | [Twitter](https://twitter.com/rodrigo47363)
-
-- 🔐 Professional Pentester & Security Researcher
-- 🕵️ OSINT & Geolocation Specialist
-- 🤖 Automation & CLI Tools Enthusiast
-- 🐧 Linux Advocate & Open Source Contributor
-
----
-
-¿Necesitas ayuda con algún proyecto o tienes preguntas? No dudes en contactarme a través de mis redes sociales o abrir un issue en el repositorio.
-
-⭐ ¿Te gusta este proyecto? Dale una estrella en GitHub y compártelo con tus colegas.
+if __name__ == "__main__":
+    main()
