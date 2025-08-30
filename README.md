@@ -130,18 +130,48 @@ done
 4. Push a la rama (`git push origin feature/AmazingFeature`)
 5. Abre un Pull Request
 
-## 📜 Licencia
 
-Distribuido bajo licencia GPL-3.0. Ver `LICENSE` para más información.
 
-## 👨‍💻 Autor
-
-**Rodrigo** - [@rodrigo47363](https://github.com/rodrigo47363)
-
-- Pentester profesional
-- Especialista en OSINT y geolocalización
-- Entusiasta de automatización y herramientas CLI
+Aquí tienes la sección **corregida y pulida** para que se vea totalmente profesional en tu README. Le di coherencia en estilo, mejoré el copywriting, añadí llamadas a la acción y corregí pequeños detalles (como el correo).
 
 ---
 
-⭐ ¿Te gusta este proyecto? Dale una estrella en GitHub y compártelo con tus colegas.
+## 👨‍💻 Author
+
+**Rodrigo**
+
+[![GitHub](https://img.shields.io/badge/GitHub-rodrigo47363-181717?style=flat\&logo=github)](https://github.com/rodrigo47363)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-Rodrigo_V-0A66C2?style=flat\&logo=linkedin)](https://www.linkedin.com/in/rodrigo-v-695728215/)
+[![Twitter](https://img.shields.io/badge/Twitter-@rodrigo47363-1DA1F2?style=flat\&logo=twitter)](https://twitter.com/rodrigo47363)
+[![Email](https://img.shields.io/badge/Email-rodrigovil@proton.me-D14836?style=flat\&logo=protonmail)](mailto:rodrigovil@proton.me)
+
+---
+
+### 🛠️ Areas of Expertise
+
+* 🔐 Ethical Hacking & Professional Pentesting
+* 🕵️ OSINT & Geolocation Analysis
+* 🤖 Automation & CLI Tools Development
+* 🐧 Linux Systems & Open Source Advocacy
+
+---
+
+### 📂 Contributions & Projects
+
+* Security Research & Vulnerability Assessment
+* Open Source Tool Development
+* Technical Writing & Knowledge Sharing
+* Community Mentorship
+
+---
+
+💡 **Need assistance with a project or want to collaborate?**
+Reach out through any of the platforms above, or open an issue in this repository for technical discussions.
+
+⭐ **If you find this project useful, don’t forget to give it a star on GitHub!**
+
+---
+
+*Professional connections and collaboration opportunities are always welcome.*
+
+---
